@@ -3,53 +3,60 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Compass Map [ver8]</title>
+    <title>Compass Map [ver9]</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #333; }
         
-        /* 地図（背景） */
+        /* --- 地図 (一番奥) --- */
         #map { 
+            position: absolute;
             width: 150vmax; 
             height: 150vmax; 
-            position: absolute;
+            
+            /* 画面中央に配置するための計算 (transformを使わない方法) */
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1; /* 一番奥 */
+            margin-top: -75vmax;  /* 高さの半分を引く */
+            margin-left: -75vmax; /* 幅の半分を引く */
+            
+            z-index: 1; 
         }
 
-        /* --- UIパーツ（手前） --- */
-        /* UI共通: z-indexを非常に大きくする */
+        /* --- UI専用レイヤー (一番手前) --- */
+        #ui-layer {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 99999; /* 確実に一番手前にする */
+            pointer-events: none; /* この透明な箱自体はクリックをスルーさせる */
+        }
+
+        /* UIレイヤーの中身（ボタンなど）はクリックできるようにする */
         .ui-element {
-            z-index: 9999 !important;
+            pointer-events: auto; 
         }
 
-        /* バージョン表示 */
+        /* 個別のパーツのスタイル */
         #version-label {
-            position: fixed; top: 20px; left: 20px;
+            position: absolute; top: 20px; left: 20px;
             font-size: 24px; font-weight: bold; color: red;
             background-color: rgba(255,255,255,0.9);
             padding: 5px 10px; border: 2px solid red;
-            pointer-events: none;
         }
 
-        /* デバッグ情報 */
         #debug-info {
-            position: fixed; bottom: 20px; left: 20px;
+            position: absolute; bottom: 20px; left: 20px;
             background: rgba(0,0,0,0.7); color: white;
             padding: 5px; font-size: 12px;
-            pointer-events: none;
         }
 
-        /* 十字キー */
         #crosshair {
-            position: fixed; top: 50%; left: 50%;
+            position: absolute; top: 50%; left: 50%;
             width: 20px; height: 20px;
             margin-left: -10px; margin-top: -10px;
-            pointer-events: none;
+            pointer-events: none; /* 十字は触れなくていい */
         }
         #crosshair::before, #crosshair::after {
             content: ''; position: absolute; background: rgba(0,0,0,0.5);
@@ -57,10 +64,8 @@
         #crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
         #crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
 
-        /* 左ボタン */
-        #compass-btn {
-            position: fixed; left: 20px; top: 50%;
-            transform: translateY(-50%);
+        /* ボタン共通 */
+        .round-btn {
             width: 60px; height: 60px;
             background-color: white; border: 2px solid #ccc;
             border-radius: 50%;
@@ -69,6 +74,12 @@
             display: flex; align-items: center; justify-content: center;
             font-size: 30px; outline: none; user-select: none;
             -webkit-tap-highlight-color: transparent; transition: all 0.3s;
+        }
+
+        /* 左ボタン */
+        #compass-btn {
+            position: absolute; left: 20px; top: 50%;
+            transform: translateY(-50%);
         }
         #compass-btn.active {
             background-color: orange; border-color: #d35400; color: white;
@@ -77,33 +88,25 @@
 
         /* 右下ボタン */
         #rotate-btn {
-            position: fixed; right: 20px; bottom: 40px;
-            width: 60px; height: 60px;
-            background-color: white; border: 2px solid #ccc;
-            border-radius: 50%;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 30px; outline: none; user-select: none;
-            -webkit-tap-highlight-color: transparent; transition: all 0.3s;
+            position: absolute; right: 20px; bottom: 40px;
         }
         #rotate-btn.active {
             background-color: #007bff; border-color: #0056b3; color: white;
             box-shadow: 0 0 15px #007bff;
         }
+
     </style>
 </head>
 <body>
 
     <div id="map"></div>
 
-    <div id="version-label" class="ui-element">[ver8]</div>
-    <div id="debug-info" class="ui-element">Angle: ---</div>
-    <div id="crosshair" class="ui-element"></div>
-    
-    <button id="compass-btn" class="ui-element">🧭</button>
-    <button id="rotate-btn" class="ui-element">🔄</button>
-
+    <div id="ui-layer">
+        <div id="version-label" class="ui-element">[ver9]</div>
+        <div id="debug-info" class="ui-element">Angle: ---</div>
+        <div id="crosshair"></div> <button id="compass-btn" class="ui-element round-btn">🧭</button>
+        <button id="rotate-btn" class="ui-element round-btn">🔄</button>
+    </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -131,7 +134,6 @@
         const debugInfo = document.getElementById('debug-info');
         const mapDiv = document.getElementById('map');
 
-        // GPS処理
         function onLocationFound(e) {
             currentLat = e.coords.latitude;
             currentLng = e.coords.longitude;
@@ -160,7 +162,6 @@
             if (isCompassActive && currentLat) drawCompassLine(lastHeading);
         });
 
-        // ボタン処理
         compassBtn.addEventListener('click', async () => {
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
@@ -202,7 +203,8 @@
                 rotateBtn.innerText = "⬆️";
             } else {
                 rotateBtn.classList.remove('active');
-                mapDiv.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+                // marginで配置しているので、戻すときは rotate(0deg) だけでOK
+                mapDiv.style.transform = `rotate(0deg)`;
                 rotateBtn.innerText = "🔄";
             }
         }
@@ -242,7 +244,8 @@
             drawCompassLine(heading);
 
             if (isMapRotating) {
-                mapDiv.style.transform = `translate(-50%, -50%) rotate(-${heading}deg)`;
+                // marginで中心にあるので、単純に rotate だけで回る（translate不要）
+                mapDiv.style.transform = `rotate(-${heading}deg)`;
             }
         }
 
