@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Compass Map [ver10]</title>
+    <title>Compass Map [ver11]</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -20,10 +20,8 @@
             z-index: 2000; pointer-events: none;
         }
 
-        /* コンパスボタン */
-        #compass-btn {
-            position: fixed; left: 20px; top: 50%;
-            transform: translateY(-50%);
+        /* 共通ボタンデザイン */
+        .round-btn {
             width: 60px; height: 60px;
             background-color: white; border: 2px solid #ccc;
             border-radius: 50%;
@@ -33,32 +31,48 @@
             font-size: 30px; outline: none; user-select: none;
             -webkit-tap-highlight-color: transparent; transition: all 0.3s;
         }
-        
-        /* --- 変更点：ボタンがONの時の色を青に変更 --- */
+
+        /* 1. 左端：コンパスボタン（青） */
+        #compass-btn {
+            position: fixed; left: 20px; top: 50%;
+            transform: translateY(-50%);
+        }
         #compass-btn.active {
-            background-color: #007bff; /* 青色 */
-            border-color: #0056b3;
-            color: white;
-            box-shadow: 0 0 15px #007bff; /* 青い光 */
+            background-color: #007bff; border-color: #0056b3; color: white;
+            box-shadow: 0 0 15px #007bff;
+        }
+
+        /* 2. 左下：夕日ボタン（オレンジ） */
+        #sunset-btn {
+            position: fixed; left: 20px; bottom: 40px;
+        }
+        #sunset-btn.active {
+            background-color: orange; border-color: #d35400; color: white;
+            box-shadow: 0 0 15px orange;
         }
 
         /* デバッグ情報 */
         #debug-info {
-            position: fixed; bottom: 20px; left: 20px;
+            position: fixed; bottom: 10px; right: 10px; /* 位置を右下に変更 */
             background: rgba(0,0,0,0.7); color: white;
             padding: 5px; font-size: 12px; z-index: 2000;
             pointer-events: none;
+            text-align: right;
         }
     </style>
 </head>
 <body>
 
     <div id="map"></div>
-    <div id="version-label">[ver10]</div>
-    <div id="debug-info">Angle: ---</div>
-    <button id="compass-btn">🧭</button>
+    <div id="version-label">[ver11]</div>
+    <div id="debug-info">Compass: ---<br>Sunset: ---</div>
+    
+    <button id="compass-btn" class="round-btn">🧭</button>
+    <button id="sunset-btn" class="round-btn">🌅</button>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.8.0/suncalc.min.js"></script>
 
     <script>
         // --- 設定 ---
@@ -70,12 +84,22 @@
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
+        // --- 変数 ---
         let currentLat = null;
         let currentLng = null;
         let currentMarker = null;
-        let directionLine = null;
+        
+        // コンパス用（青）
+        let compassLine = null;
         let isCompassActive = false;
-        let lastHeading = 0; // 最新の方角を保存
+        let lastHeading = 0;
+
+        // 夕日用（オレンジ）
+        let sunsetLine = null;
+        let isSunsetActive = false;
+        let sunsetAzimuth = 0; // 夕日の方角(度)
+
+        const debugInfo = document.getElementById('debug-info');
 
         // --- 2. GPS処理 ---
         function onLocationFound(e) {
@@ -90,64 +114,64 @@
             } else {
                 currentMarker.setLatLng([currentLat, currentLng]);
             }
-            // 位置が変わったら線も再描画
-            if (isCompassActive) drawCompassLine(lastHeading);
+            
+            // 位置が変わったら線を再描画
+            updateLines();
         }
 
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(onLocationFound, null, { enableHighAccuracy: true });
         }
 
-        // --- 地図を動かしたときも線を再計算して描画 ---
+        // 地図を動かしたときも線を再計算して描画
         map.on('move', () => {
-            if (isCompassActive && currentLat) {
-                drawCompassLine(lastHeading);
-            }
+            if (currentLat) updateLines();
         });
 
-        // --- 3. コンパスボタン ---
-        const btn = document.getElementById('compass-btn');
-        const debugInfo = document.getElementById('debug-info');
+        function updateLines() {
+            if (isCompassActive) drawCompassLine(lastHeading);
+            if (isSunsetActive) drawSunsetLine();
+        }
 
-        btn.addEventListener('click', async () => {
+        // --- 3. コンパスボタン（青）の処理 ---
+        const compassBtn = document.getElementById('compass-btn');
+
+        compassBtn.addEventListener('click', async () => {
             // iOS Permission
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
                     const response = await DeviceOrientationEvent.requestPermission();
-                    if (response !== 'granted') { alert('許可されませんでした'); return; }
-                } catch (e) { console.error(e); }
+                    if (response !== 'granted') return;
+                } catch (e) {}
             }
 
             isCompassActive = !isCompassActive;
 
             if (isCompassActive) {
-                btn.classList.add('active');
+                compassBtn.classList.add('active');
                 if ('ondeviceorientationabsolute' in window) {
                     window.addEventListener('deviceorientationabsolute', handleOrientation);
                 } else {
                     window.addEventListener('deviceorientation', handleOrientation);
                 }
-                // すぐに描画トライ
                 if (currentLat) drawCompassLine(lastHeading);
             } else {
-                btn.classList.remove('active');
+                compassBtn.classList.remove('active');
                 if ('ondeviceorientationabsolute' in window) {
                     window.removeEventListener('deviceorientationabsolute', handleOrientation);
                 } else {
                     window.removeEventListener('deviceorientation', handleOrientation);
                 }
-                if (directionLine) {
-                    map.removeLayer(directionLine);
-                    directionLine = null;
+                if (compassLine) {
+                    map.removeLayer(compassLine);
+                    compassLine = null;
                 }
-                debugInfo.innerText = "Angle: ---";
+                updateDebug();
             }
         });
 
-        // --- 4. 方角計算処理 ---
         function handleOrientation(event) {
             let heading = 0;
-
             if (event.webkitCompassHeading) {
                 heading = event.webkitCompassHeading;
             } else if (event.absolute === true || event.alpha !== null) {
@@ -159,40 +183,112 @@
             if (heading >= 360) heading -= 360;
 
             lastHeading = heading;
-            debugInfo.innerText = `Angle: ${Math.round(heading)}°`;
-            
             drawCompassLine(heading);
+            updateDebug();
         }
 
-        // --- 5. 描画処理 ---
-        function drawCompassLine(heading) {
-            if (currentLat === null || currentLng === null) return;
+        // --- 4. 夕日ボタン（オレンジ）の処理 ---
+        const sunsetBtn = document.getElementById('sunset-btn');
+
+        sunsetBtn.addEventListener('click', () => {
+            if (!currentLat || !currentLng) {
+                alert("現在地を取得してから押してください");
+                return;
+            }
+
+            isSunsetActive = !isSunsetActive;
+
+            if (isSunsetActive) {
+                sunsetBtn.classList.add('active');
+                // 今日の日付で夕日の位置を計算
+                calculateSunset();
+                drawSunsetLine();
+            } else {
+                sunsetBtn.classList.remove('active');
+                if (sunsetLine) {
+                    map.removeLayer(sunsetLine);
+                    sunsetLine = null;
+                }
+                updateDebug();
+            }
+        });
+
+        // 太陽の位置を計算する関数
+        function calculateSunset() {
+            const now = new Date();
+            // SunCalcで今日の夕日(sunset)の時間を取得
+            const times = SunCalc.getTimes(now, currentLat, currentLng);
             
-            // 地図の画面サイズに合わせて線の長さを決める
+            // 夕日の時間の、太陽の位置情報を取得
+            // ※もし「すでに日が沈んでいる」場合でも、今日の夕日の方角として計算されます
+            const sunsetPos = SunCalc.getPosition(times.sunset, currentLat, currentLng);
+            
+            // SunCalcの方角(azimuth)は「南=0, 西=正, 東=負」のラジアンで返ってくる
+            // これを地図用（北=0, 時計回り）の度数(degree)に変換
+            // 南(0) -> 180度, 西(PI/2) -> 270度
+            const azimuthRad = sunsetPos.azimuth;
+            let azimuthDeg = (azimuthRad * 180 / Math.PI) + 180;
+            
+            sunsetAzimuth = azimuthDeg;
+            updateDebug();
+        }
+
+
+        // --- 5. 描画処理 ---
+        
+        // 線の長さを計算する共通関数
+        function getLineLengthKm() {
             const centerLatLng = map.getCenter();
             const cornerLatLng = map.getBounds().getNorthEast();
             const distMeters = map.distance(centerLatLng, cornerLatLng);
+            return (distMeters * 2) / 1000; // km
+        }
 
-            const lengthKm = (distMeters * 2) / 1000;
-
-            // --- 座標計算 ---
+        // 終点座標を計算する共通関数
+        function calculateEndLatLng(startLat, startLng, heading, lengthKm) {
             const headingRad = heading * (Math.PI / 180);
             const dy = (lengthKm / 111) * Math.cos(headingRad);
-            const dx = (lengthKm / (111 * Math.cos(currentLat * Math.PI / 180))) * Math.sin(headingRad);
+            const dx = (lengthKm / (111 * Math.cos(startLat * Math.PI / 180))) * Math.sin(headingRad);
+            return [startLat + dy, startLng + dx];
+        }
 
-            const latlngs = [
-                [currentLat, currentLng],
-                [currentLat + dy, currentLng + dx]
-            ];
+        // コンパスの線（青）を描く
+        function drawCompassLine(heading) {
+            if (currentLat === null || currentLng === null) return;
+            
+            const lengthKm = getLineLengthKm();
+            const endPos = calculateEndLatLng(currentLat, currentLng, heading, lengthKm);
 
-            if (directionLine) map.removeLayer(directionLine);
+            const latlngs = [[currentLat, currentLng], endPos];
 
-            // --- 変更点：線を青色に ---
-            directionLine = L.polyline(latlngs, {
-                color: 'blue',  // orange -> blue
-                weight: 5,
-                opacity: 0.7
+            if (compassLine) map.removeLayer(compassLine);
+
+            compassLine = L.polyline(latlngs, {
+                color: 'blue', weight: 5, opacity: 0.7
             }).addTo(map);
+        }
+
+        // 夕日の線（オレンジ）を描く
+        function drawSunsetLine() {
+            if (currentLat === null || currentLng === null) return;
+
+            const lengthKm = getLineLengthKm();
+            const endPos = calculateEndLatLng(currentLat, currentLng, sunsetAzimuth, lengthKm);
+
+            const latlngs = [[currentLat, currentLng], endPos];
+
+            if (sunsetLine) map.removeLayer(sunsetLine);
+
+            sunsetLine = L.polyline(latlngs, {
+                color: 'orange', weight: 5, opacity: 0.8, dashArray: '10, 10' // 少し破線にして区別
+            }).addTo(map);
+        }
+
+        function updateDebug() {
+            let text = "";
+            text += `Compass: ${isCompassActive ? Math.round(lastHeading) + '°' : 'OFF'}<br>`;
+            text += `Sunset: ${isSunsetActive ? Math.round(sunsetAzimuth) + '°' : 'OFF'}`;
+            debugInfo.innerHTML = text;
         }
     </script>
 </body>
