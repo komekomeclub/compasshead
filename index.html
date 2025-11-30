@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Compass Map [ver5]</title>
+    <title>Compass Map [ver10]</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -33,9 +33,13 @@
             font-size: 30px; outline: none; user-select: none;
             -webkit-tap-highlight-color: transparent; transition: all 0.3s;
         }
+        
+        /* --- 変更点：ボタンがONの時の色を青に変更 --- */
         #compass-btn.active {
-            background-color: orange; border-color: #d35400; color: white;
-            box-shadow: 0 0 15px orange;
+            background-color: #007bff; /* 青色 */
+            border-color: #0056b3;
+            color: white;
+            box-shadow: 0 0 15px #007bff; /* 青い光 */
         }
 
         /* デバッグ情報 */
@@ -50,7 +54,7 @@
 <body>
 
     <div id="map"></div>
-    <div id="version-label">[ver5]</div>
+    <div id="version-label">[ver10]</div>
     <div id="debug-info">Angle: ---</div>
     <button id="compass-btn">🧭</button>
 
@@ -94,7 +98,7 @@
             navigator.geolocation.watchPosition(onLocationFound, null, { enableHighAccuracy: true });
         }
 
-        // --- 追加：地図を動かしたときも線を再計算して描画 ---
+        // --- 地図を動かしたときも線を再計算して描画 ---
         map.on('move', () => {
             if (isCompassActive && currentLat) {
                 drawCompassLine(lastHeading);
@@ -160,18 +164,15 @@
             drawCompassLine(heading);
         }
 
-        // --- 5. 描画処理（改良版） ---
+        // --- 5. 描画処理 ---
         function drawCompassLine(heading) {
             if (currentLat === null || currentLng === null) return;
             
-            // 【変更点】地図の画面サイズに合わせて線の長さを決める
-            // 地図の中心から、画面の北東の端までの距離（メートル）を計算
+            // 地図の画面サイズに合わせて線の長さを決める
             const centerLatLng = map.getCenter();
             const cornerLatLng = map.getBounds().getNorthEast();
             const distMeters = map.distance(centerLatLng, cornerLatLng);
 
-            // 画面の端まで届くように、計算した距離の2倍の長さを確保する（km単位に変換）
-            // これでズームアウトしても常に画面外まで線が届く
             const lengthKm = (distMeters * 2) / 1000;
 
             // --- 座標計算 ---
@@ -186,8 +187,11 @@
 
             if (directionLine) map.removeLayer(directionLine);
 
+            // --- 変更点：線を青色に ---
             directionLine = L.polyline(latlngs, {
-                color: 'orange', weight: 5, opacity: 0.7
+                color: 'blue',  // orange -> blue
+                weight: 5,
+                opacity: 0.7
             }).addTo(map);
         }
     </script>
