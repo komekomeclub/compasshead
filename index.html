@@ -3,119 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Compass Map [ver9]</title>
+    <title>Compass Map [ver5]</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #333; }
-        
-        /* --- 地図 (一番奥) --- */
-        #map { 
-            position: absolute;
-            width: 150vmax; 
-            height: 150vmax; 
-            
-            /* 画面中央に配置するための計算 (transformを使わない方法) */
-            top: 50%;
-            left: 50%;
-            margin-top: -75vmax;  /* 高さの半分を引く */
-            margin-left: -75vmax; /* 幅の半分を引く */
-            
-            z-index: 1; 
-        }
+        body { margin: 0; padding: 0; overflow: hidden; }
+        #map { width: 100vw; height: 100vh; z-index: 1; }
 
-        /* --- UI専用レイヤー (一番手前) --- */
-        #ui-layer {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 99999; /* 確実に一番手前にする */
-            pointer-events: none; /* この透明な箱自体はクリックをスルーさせる */
-        }
-
-        /* UIレイヤーの中身（ボタンなど）はクリックできるようにする */
-        .ui-element {
-            pointer-events: auto; 
-        }
-
-        /* 個別のパーツのスタイル */
+        /* バージョン表示 */
         #version-label {
-            position: absolute; top: 20px; left: 20px;
+            position: fixed; top: 20px; left: 20px;
             font-size: 24px; font-weight: bold; color: red;
             background-color: rgba(255,255,255,0.9);
             padding: 5px 10px; border: 2px solid red;
+            z-index: 2000; pointer-events: none;
         }
 
-        #debug-info {
-            position: absolute; bottom: 20px; left: 20px;
-            background: rgba(0,0,0,0.7); color: white;
-            padding: 5px; font-size: 12px;
-        }
-
-        #crosshair {
-            position: absolute; top: 50%; left: 50%;
-            width: 20px; height: 20px;
-            margin-left: -10px; margin-top: -10px;
-            pointer-events: none; /* 十字は触れなくていい */
-        }
-        #crosshair::before, #crosshair::after {
-            content: ''; position: absolute; background: rgba(0,0,0,0.5);
-        }
-        #crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
-        #crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
-
-        /* ボタン共通 */
-        .round-btn {
+        /* コンパスボタン */
+        #compass-btn {
+            position: fixed; left: 20px; top: 50%;
+            transform: translateY(-50%);
             width: 60px; height: 60px;
             background-color: white; border: 2px solid #ccc;
             border-radius: 50%;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            cursor: pointer;
+            z-index: 1000; cursor: pointer;
             display: flex; align-items: center; justify-content: center;
             font-size: 30px; outline: none; user-select: none;
             -webkit-tap-highlight-color: transparent; transition: all 0.3s;
-        }
-
-        /* 左ボタン */
-        #compass-btn {
-            position: absolute; left: 20px; top: 50%;
-            transform: translateY(-50%);
         }
         #compass-btn.active {
             background-color: orange; border-color: #d35400; color: white;
             box-shadow: 0 0 15px orange;
         }
 
-        /* 右下ボタン */
-        #rotate-btn {
-            position: absolute; right: 20px; bottom: 40px;
+        /* デバッグ情報 */
+        #debug-info {
+            position: fixed; bottom: 20px; left: 20px;
+            background: rgba(0,0,0,0.7); color: white;
+            padding: 5px; font-size: 12px; z-index: 2000;
+            pointer-events: none;
         }
-        #rotate-btn.active {
-            background-color: #007bff; border-color: #0056b3; color: white;
-            box-shadow: 0 0 15px #007bff;
-        }
-
     </style>
 </head>
 <body>
 
     <div id="map"></div>
-
-    <div id="ui-layer">
-        <div id="version-label" class="ui-element">[ver9]</div>
-        <div id="debug-info" class="ui-element">Angle: ---</div>
-        <div id="crosshair"></div> <button id="compass-btn" class="ui-element round-btn">🧭</button>
-        <button id="rotate-btn" class="ui-element round-btn">🔄</button>
-    </div>
+    <div id="version-label">[ver5]</div>
+    <div id="debug-info">Angle: ---</div>
+    <button id="compass-btn">🧭</button>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        const DECLINATION_CORRECTION = -7;
+        // --- 設定 ---
+        const DECLINATION_CORRECTION = -7; // 磁北偏差補正
 
-        // 地図初期化
-        const map = L.map('map', { zoomControl: false }).setView([35.681236, 139.767125], 16);
-        
+        // --- 1. 地図初期化 ---
+        const map = L.map('map').setView([35.681236, 139.767125], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
@@ -124,16 +70,10 @@
         let currentLng = null;
         let currentMarker = null;
         let directionLine = null;
-        
         let isCompassActive = false;
-        let isMapRotating = false;
-        let lastHeading = 0;
+        let lastHeading = 0; // 最新の方角を保存
 
-        const compassBtn = document.getElementById('compass-btn');
-        const rotateBtn = document.getElementById('rotate-btn');
-        const debugInfo = document.getElementById('debug-info');
-        const mapDiv = document.getElementById('map');
-
+        // --- 2. GPS処理 ---
         function onLocationFound(e) {
             currentLat = e.coords.latitude;
             currentLng = e.coords.longitude;
@@ -146,88 +86,64 @@
             } else {
                 currentMarker.setLatLng([currentLat, currentLng]);
             }
-
-            if (isMapRotating) {
-                map.setView([currentLat, currentLng], map.getZoom(), { animate: false });
-            }
-
+            // 位置が変わったら線も再描画
             if (isCompassActive) drawCompassLine(lastHeading);
         }
 
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(onLocationFound, null, { enableHighAccuracy: true });
         }
-        
+
+        // --- 追加：地図を動かしたときも線を再計算して描画 ---
         map.on('move', () => {
-            if (isCompassActive && currentLat) drawCompassLine(lastHeading);
+            if (isCompassActive && currentLat) {
+                drawCompassLine(lastHeading);
+            }
         });
 
-        compassBtn.addEventListener('click', async () => {
+        // --- 3. コンパスボタン ---
+        const btn = document.getElementById('compass-btn');
+        const debugInfo = document.getElementById('debug-info');
+
+        btn.addEventListener('click', async () => {
+            // iOS Permission
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
                     const response = await DeviceOrientationEvent.requestPermission();
-                    if (response !== 'granted') return;
-                } catch (e) {}
+                    if (response !== 'granted') { alert('許可されませんでした'); return; }
+                } catch (e) { console.error(e); }
             }
 
             isCompassActive = !isCompassActive;
-            
+
             if (isCompassActive) {
-                compassBtn.classList.add('active');
-                startSensor();
+                btn.classList.add('active');
+                if ('ondeviceorientationabsolute' in window) {
+                    window.addEventListener('deviceorientationabsolute', handleOrientation);
+                } else {
+                    window.addEventListener('deviceorientation', handleOrientation);
+                }
+                // すぐに描画トライ
+                if (currentLat) drawCompassLine(lastHeading);
             } else {
-                compassBtn.classList.remove('active');
-                if (isMapRotating) toggleRotateMode();
-                stopSensor();
+                btn.classList.remove('active');
+                if ('ondeviceorientationabsolute' in window) {
+                    window.removeEventListener('deviceorientationabsolute', handleOrientation);
+                } else {
+                    window.removeEventListener('deviceorientation', handleOrientation);
+                }
                 if (directionLine) {
                     map.removeLayer(directionLine);
                     directionLine = null;
                 }
+                debugInfo.innerText = "Angle: ---";
             }
         });
 
-        rotateBtn.addEventListener('click', () => {
-            if (!isCompassActive) {
-                alert("先に左のコンパスボタン(🧭)をONにしてください");
-                return;
-            }
-            toggleRotateMode();
-        });
-
-        function toggleRotateMode() {
-            isMapRotating = !isMapRotating;
-            
-            if (isMapRotating) {
-                rotateBtn.classList.add('active');
-                if(currentLat) map.setView([currentLat, currentLng], map.getZoom());
-                rotateBtn.innerText = "⬆️";
-            } else {
-                rotateBtn.classList.remove('active');
-                // marginで配置しているので、戻すときは rotate(0deg) だけでOK
-                mapDiv.style.transform = `rotate(0deg)`;
-                rotateBtn.innerText = "🔄";
-            }
-        }
-
-        function startSensor() {
-            if ('ondeviceorientationabsolute' in window) {
-                window.addEventListener('deviceorientationabsolute', handleOrientation);
-            } else {
-                window.addEventListener('deviceorientation', handleOrientation);
-            }
-        }
-
-        function stopSensor() {
-            if ('ondeviceorientationabsolute' in window) {
-                window.removeEventListener('deviceorientationabsolute', handleOrientation);
-            } else {
-                window.removeEventListener('deviceorientation', handleOrientation);
-            }
-            debugInfo.innerText = "Angle: ---";
-        }
-
+        // --- 4. 方角計算処理 ---
         function handleOrientation(event) {
             let heading = 0;
+
             if (event.webkitCompassHeading) {
                 heading = event.webkitCompassHeading;
             } else if (event.absolute === true || event.alpha !== null) {
@@ -242,21 +158,23 @@
             debugInfo.innerText = `Angle: ${Math.round(heading)}°`;
             
             drawCompassLine(heading);
-
-            if (isMapRotating) {
-                // marginで中心にあるので、単純に rotate だけで回る（translate不要）
-                mapDiv.style.transform = `rotate(-${heading}deg)`;
-            }
         }
 
+        // --- 5. 描画処理（改良版） ---
         function drawCompassLine(heading) {
             if (currentLat === null || currentLng === null) return;
             
+            // 【変更点】地図の画面サイズに合わせて線の長さを決める
+            // 地図の中心から、画面の北東の端までの距離（メートル）を計算
             const centerLatLng = map.getCenter();
             const cornerLatLng = map.getBounds().getNorthEast();
             const distMeters = map.distance(centerLatLng, cornerLatLng);
-            const lengthKm = (distMeters * 1.2) / 1000;
 
+            // 画面の端まで届くように、計算した距離の2倍の長さを確保する（km単位に変換）
+            // これでズームアウトしても常に画面外まで線が届く
+            const lengthKm = (distMeters * 2) / 1000;
+
+            // --- 座標計算 ---
             const headingRad = heading * (Math.PI / 180);
             const dy = (lengthKm / 111) * Math.cos(headingRad);
             const dx = (lengthKm / (111 * Math.cos(currentLat * Math.PI / 180))) * Math.sin(headingRad);
